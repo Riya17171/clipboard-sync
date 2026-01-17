@@ -165,7 +165,7 @@ function connectSignaling() {
           setPairStatus("This device cannot pair with itself.");
         } else {
           statusEl.textContent = "Pair failed";
-          setPairStatus("Pair failed.");
+          setPairStatus(msg.error ? `Pair failed: ${msg.error}` : "Pair failed.");
         }
         break;
       case "presence":
@@ -345,14 +345,19 @@ async function handleSignal(peerId, payload) {
     return;
   }
   if (payload.type === "offer") {
+    if (pc.signalingState !== "stable") {
+      return;
+    }
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     ws.send(JSON.stringify({ type: "signal", to: peerId, payload: { type: "answer", sdp: answer } }));
   } else if (payload.type === "answer") {
+    if (pc.signalingState !== "have-local-offer") return;
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
   } else if (payload.type === "ice") {
     try {
+      if (!pc.remoteDescription) return;
       await pc.addIceCandidate(payload.candidate);
     } catch {
       // ignore
