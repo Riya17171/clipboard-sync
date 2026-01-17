@@ -4,6 +4,7 @@ const STUN_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 let ws = null;
 let identity = null;
 const peers = new Map(); // peerId -> { pc, dc }
+const incomingChunks = new Map(); // item_id -> { total, received, chunks, meta }
 
 if (!window.clipboardApp && typeof require === "function") {
   const { ipcRenderer } = require("electron");
@@ -343,6 +344,8 @@ function setupDataChannel(peerId, dc) {
         window.clipboardApp.applyRemoteClipboard(msg.item);
         renderHistory();
         dc.send(JSON.stringify({ kind: "ack", item_id: msg.item.item_id }));
+      } else if (msg.kind === "chunk") {
+        handleChunkMessage(peerId, dc, msg);
       } else if (msg.kind === "ack") {
         window.clipboardApp.markAcked(peerId, msg.item_id);
       }
@@ -400,7 +403,7 @@ async function handleSignal(peerId, payload) {
 function broadcastClipboard(item) {
   for (const { dc } of peers.values()) {
     if (dc && dc.readyState === "open") {
-      dc.send(JSON.stringify({ kind: "clipboard", item }));
+      sendClipboardItem(dc, item);
     }
   }
 }
@@ -410,7 +413,71 @@ async function flushPending(peerId) {
   const peer = peers.get(peerId);
   if (!peer || !peer.dc || peer.dc.readyState !== "open") return;
   for (const item of pending) {
-    peer.dc.send(JSON.stringify({ kind: "clipboard", item }));
+    sendClipboardItem(peer.dc, item);
+  }
+}
+
+function sendClipboardItem(dc, item) {
+  const payload = item.payload || "";
+  const payloadB64 = Buffer.from(payload, "utf8").toString("base64");
+  const maxChunk = 12 * 1024; // 12KB
+  if (payloadB64.length <= maxChunk) {
+    dc.send(JSON.stringify({ kind: "clipboard", item }));
+    return;
+  }
+  const total = Math.ceil(payloadB64.length / maxChunk);
+  for (let i = 0; i < total; i++) {
+    const chunk = payloadB64.slice(i * maxChunk, (i + 1) * maxChunk);
+    dc.send(JSON.stringify({
+      kind: "chunk",
+      item_id: item.item_id,
+      index: i,
+      total,
+      data: chunk,
+      meta: {
+        device_id: item.device_id,
+        ts: item.ts,
+        type: item.type,
+        size_bytes: item.size_bytes || payload.length
+      }
+    }));
+  }
+}
+
+function handleChunkMessage(peerId, dc, msg) {
+  if (!msg.item_id || typeof msg.index !== "number" || typeof msg.total !== "number") return;
+  const key = msg.item_id;
+  let entry = incomingChunks.get(key);
+  if (!entry) {
+    entry = {
+      total: msg.total,
+      received: 0,
+      chunks: new Array(msg.total),
+      meta: msg.meta || {}
+    };
+    incomingChunks.set(key, entry);
+  }
+  if (msg.index < 0 || msg.index >= entry.total) return;
+  if (!entry.chunks[msg.index]) {
+    entry.chunks[msg.index] = msg.data || "";
+    entry.received += 1;
+  }
+  if (entry.received === entry.total) {
+    const joined = entry.chunks.join("");
+    const payload = Buffer.from(joined, "base64").toString("utf8");
+    const item = {
+      item_id: key,
+      device_id: entry.meta.device_id || "peer",
+      ts: entry.meta.ts || Date.now(),
+      hlc: null,
+      type: entry.meta.type || "text",
+      payload,
+      size_bytes: entry.meta.size_bytes || payload.length
+    };
+    incomingChunks.delete(key);
+    window.clipboardApp.applyRemoteClipboard(item);
+    renderHistory();
+    dc.send(JSON.stringify({ kind: "ack", item_id: key }));
   }
 }
 
