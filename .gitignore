@@ -1,0 +1,35 @@
+# Node / Electron
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Electron build artifacts
+/dist/
+/out/
+
+# Env
+.env
+.env.*
+
+# SQLite / local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary
+.tmp/
+.tmp/**
+
+# User data (Electron)
+/Library/
