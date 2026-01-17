@@ -289,20 +289,50 @@ function startClipboardWatcher(deviceId) {
     let payload = "";
     let sizeBytes = 0;
 
+    const formats = clipboard.availableFormats().map((f) => f.toLowerCase());
+    const hasFormat = (name) => formats.includes(name.toLowerCase());
+
     const image = clipboard.readImage();
     if (image && !image.isEmpty()) {
       type = "image";
       const png = image.toPNG();
       sizeBytes = png.length;
       payload = `data:image/png;base64,${png.toString("base64")}`;
-    } else {
-      const text = clipboard.readText();
-      if (!text) return;
-      if (!syncTextEnabled) return;
-      payload = text;
-      sizeBytes = Buffer.byteLength(payload, "utf8");
-      if (fs.existsSync(text) && fs.statSync(text).isFile()) {
+    } else if (hasFormat("image/png") || hasFormat("image/jpeg") || hasFormat("image/jpg")) {
+      const fmt = hasFormat("image/png") ? "image/png" : "image/jpeg";
+      const buf = clipboard.readBuffer(fmt);
+      if (buf && buf.length > 0) {
+        type = "image";
+        sizeBytes = buf.length;
+        payload = `data:${fmt};base64,${buf.toString("base64")}`;
+      }
+    }
+
+    if (type !== "image") {
+      let filePath = "";
+      if (hasFormat("public.file-url")) {
+        const buf = clipboard.readBuffer("public.file-url");
+        filePath = buf.toString("utf8");
+      } else if (hasFormat("text/uri-list")) {
+        const buf = clipboard.readBuffer("text/uri-list");
+        filePath = buf.toString("utf8");
+      }
+
+      if (filePath) {
+        const first = filePath.split(/\r?\n/).find((line) => line.trim().length > 0) || "";
+        const decoded = first.replace(/^file:\/\//i, "");
+        payload = decodeURIComponent(decoded);
         type = "file";
+        sizeBytes = Buffer.byteLength(payload, "utf8");
+      } else {
+        const text = clipboard.readText();
+        if (!text) return;
+        if (!syncTextEnabled) return;
+        payload = text;
+        sizeBytes = Buffer.byteLength(payload, "utf8");
+        if (fs.existsSync(text) && fs.statSync(text).isFile()) {
+          type = "file";
+        }
       }
     }
 
@@ -374,6 +404,8 @@ app.whenReady().then(async () => {
     if (item.type === "image") {
       const image = nativeImage.createFromDataURL(payload);
       clipboard.writeImage(image);
+    } else if (item.type === "file") {
+      clipboard.writeText(payload);
     } else {
       clipboard.writeText(payload);
     }
