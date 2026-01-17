@@ -1,5 +1,5 @@
 import { WebSocketServer } from "ws";
-import { randomUUID } from "crypto";
+import { randomUUID, randomInt } from "crypto";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8787;
 
@@ -89,7 +89,10 @@ wss.on("connection", (ws) => {
       }
       case "request_pair_token": {
         if (!currentDeviceId) return;
-        const token = randomUUID();
+        let token = String(randomInt(0, 1_000_000)).padStart(6, "0");
+        while (pairingTokens.has(token)) {
+          token = String(randomInt(0, 1_000_000)).padStart(6, "0");
+        }
         const expiresAt = nowMs() + 2 * 60 * 1000; // 2 minutes
         pairingTokens.set(token, { deviceId: currentDeviceId, expiresAt });
         console.log("send pair_token", currentDeviceId);

@@ -1,4 +1,4 @@
-let SIGNALING_URL = "ws://localhost:8787";
+const SIGNALING_URL = "wss://untransmissive-carmelia-tomial.ngrok-free.dev";
 const STUN_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 let ws = null;
@@ -64,7 +64,6 @@ const syncEnabledEl = document.getElementById("sync-enabled");
 const syncTextEl = document.getElementById("sync-text");
 const historyLimitEl = document.getElementById("history-limit");
 const pairStatusEl = document.getElementById("pair-status");
-const signalingUrlEl = document.getElementById("signaling-url");
 
 let currentPairToken = null;
 let pendingPairTokenRequest = false;
@@ -82,12 +81,8 @@ async function init() {
   syncEnabledEl.checked = settings.syncEnabled;
   syncTextEl.checked = settings.syncTextEnabled;
   historyLimitEl.value = settings.historyLimit;
-  if (settings.signalingUrl) {
-    SIGNALING_URL = settings.signalingUrl;
-    signalingUrlEl.value = settings.signalingUrl;
-  }
-  statusEl.textContent = `Using ${SIGNALING_URL}`;
-  window.clipboardApp.log(`using signaling ${SIGNALING_URL}`);
+  statusEl.textContent = "Connecting…";
+  window.clipboardApp.log("using signaling url");
   connectSignaling();
   renderDevices();
   renderHistory();
@@ -116,7 +111,7 @@ function connectSignaling() {
   ws = new WebSocket(SIGNALING_URL);
 
   ws.addEventListener("open", () => {
-    statusEl.textContent = `Connected (${SIGNALING_URL})`;
+    statusEl.textContent = "Connected";
     window.clipboardApp.log("ws open");
     safeSend({
       type: "register",
@@ -215,11 +210,11 @@ function connectSignaling() {
   });
 
   ws.addEventListener("close", () => {
-    statusEl.textContent = `Disconnected (${SIGNALING_URL})`;
+    statusEl.textContent = "Disconnected";
   });
 
   ws.addEventListener("error", () => {
-    statusEl.textContent = `Connect error (${SIGNALING_URL})`;
+    statusEl.textContent = "Connect error";
   });
 }
 
@@ -434,15 +429,6 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
   await window.clipboardApp.setSetting("sync_enabled", syncEnabledEl.checked);
   await window.clipboardApp.setSetting("sync_text", syncTextEl.checked);
   await window.clipboardApp.setSetting("history_limit", limit);
-  let url = signalingUrlEl.value.trim();
-  if (url.startsWith("https://")) url = `wss://${url.slice("https://".length)}`;
-  if (url.startsWith("http://")) url = `ws://${url.slice("http://".length)}`;
-  if (url) {
-    await window.clipboardApp.setSetting("signaling_url", url);
-    SIGNALING_URL = url;
-    if (ws) ws.close();
-    connectSignaling();
-  }
   historyLimitEl.value = limit;
   renderHistory();
 });

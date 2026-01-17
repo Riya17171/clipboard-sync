@@ -161,7 +161,6 @@ function getOrCreateDeviceIdentity() {
   if (!getSetting("sync_enabled")) setSetting("sync_enabled", "true");
   if (!getSetting("sync_text")) setSetting("sync_text", "true");
   if (!getSetting("history_limit")) setSetting("history_limit", "50");
-  if (!getSetting("signaling_url")) setSetting("signaling_url", "ws://localhost:8787");
 
   return { deviceId, deviceName, publicKey, privateKey };
 }
@@ -310,8 +309,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("get-settings", () => ({
     syncEnabled,
     syncTextEnabled,
-    historyLimit,
-    signalingUrl: dbGet("SELECT value FROM settings WHERE key = ?", ["signaling_url"])?.value
+    historyLimit
   }));
   ipcMain.handle("set-setting", (_, key, value) => {
     dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);
