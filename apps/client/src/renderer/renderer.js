@@ -56,6 +56,7 @@ if (!window.clipboardApp && typeof require === "function") {
 
 const statusEl = document.getElementById("status");
 const devicesEl = document.getElementById("devices");
+const devicesManageEl = document.getElementById("devices-manage");
 const historyEl = document.getElementById("history");
 const tokenDisplayEl = document.getElementById("token-display");
 const tokenInputEl = document.getElementById("pair-token");
@@ -64,6 +65,11 @@ const syncEnabledEl = document.getElementById("sync-enabled");
 const syncTextEl = document.getElementById("sync-text");
 const historyLimitEl = document.getElementById("history-limit");
 const pairStatusEl = document.getElementById("pair-status");
+const maxItemSizeEl = document.getElementById("max-item-size");
+const onlineCountEl = document.getElementById("online-count");
+const offlineCountEl = document.getElementById("offline-count");
+const clockEl = document.getElementById("clock");
+const navButtons = document.querySelectorAll(".nav-item");
 
 let currentPairToken = null;
 let pendingPairTokenRequest = false;
@@ -71,6 +77,21 @@ let pairTokenTimeout = null;
 
 function setPairStatus(text) {
   if (pairStatusEl) pairStatusEl.textContent = text || "";
+}
+
+function updateClock() {
+  if (!clockEl) return;
+  const now = new Date();
+  clockEl.textContent = now.toLocaleTimeString();
+}
+
+function showPage(page) {
+  document.querySelectorAll(".page").forEach((section) => {
+    section.classList.toggle("active", section.id === `page-${page}`);
+  });
+  navButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
 }
 
 async function init() {
@@ -81,11 +102,22 @@ async function init() {
   syncEnabledEl.checked = settings.syncEnabled;
   syncTextEl.checked = settings.syncTextEnabled;
   historyLimitEl.value = settings.historyLimit;
+  maxItemSizeEl.value = settings.maxItemSizeKb || 1024;
   statusEl.textContent = "Connecting…";
   window.clipboardApp.log("using signaling url");
   connectSignaling();
   renderDevices();
   renderHistory();
+
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const page = btn.dataset.page;
+      showPage(page);
+    });
+  });
 
   window.clipboardApp.onLocalClipboard((item) => {
     broadcastClipboard(item);
@@ -384,19 +416,38 @@ async function flushPending(peerId) {
 
 async function renderDevices() {
   const devices = await window.clipboardApp.listDevices();
+  let onlineCount = 0;
+  let offlineCount = 0;
   devicesEl.innerHTML = "";
+  if (devicesManageEl) devicesManageEl.innerHTML = "";
+
   for (const d of devices) {
-    const li = document.createElement("li");
+    const status = d.status || "unknown";
+    if (status === "online") onlineCount += 1;
+    if (status === "offline") offlineCount += 1;
     const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : "never";
+
+    const li = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${d.name} (${d.status || "unknown"}) · last seen ${lastSeen}`;
-    const btn = document.createElement("button");
-    btn.textContent = "Unpair";
-    btn.addEventListener("click", () => unpairDevice(d.device_id));
+    label.textContent = `${d.name} (${status}) · last seen ${lastSeen}`;
     li.appendChild(label);
-    li.appendChild(btn);
     devicesEl.appendChild(li);
+
+    if (devicesManageEl) {
+      const liManage = document.createElement("li");
+      const labelManage = document.createElement("span");
+      labelManage.textContent = `${d.name} (${status})`;
+      const btn = document.createElement("button");
+      btn.textContent = "Unpair";
+      btn.addEventListener("click", () => unpairDevice(d.device_id));
+      liManage.appendChild(labelManage);
+      liManage.appendChild(btn);
+      devicesManageEl.appendChild(liManage);
+    }
   }
+
+  if (onlineCountEl) onlineCountEl.textContent = `Online: ${onlineCount}`;
+  if (offlineCountEl) offlineCountEl.textContent = `Offline: ${offlineCount}`;
 }
 
 async function renderHistory() {
@@ -411,7 +462,7 @@ async function renderHistory() {
 
 // UI actions
 
-document.getElementById("btn-generate-qr").addEventListener("click", () => {
+document.getElementById("btn-generate-code").addEventListener("click", () => {
   requestPairToken();
 });
 
@@ -439,12 +490,25 @@ document.getElementById("btn-save-name").addEventListener("click", async () => {
 
 document.getElementById("btn-save-settings").addEventListener("click", async () => {
   const limit = Math.max(10, Math.min(500, Number(historyLimitEl.value || 50)));
+  const maxSize = Math.max(1, Math.min(10240, Number(maxItemSizeEl.value || 1024)));
   await window.clipboardApp.setSetting("sync_enabled", syncEnabledEl.checked);
   await window.clipboardApp.setSetting("sync_text", syncTextEl.checked);
   await window.clipboardApp.setSetting("history_limit", limit);
+  await window.clipboardApp.setSetting("max_item_size_kb", maxSize);
   historyLimitEl.value = limit;
+  maxItemSizeEl.value = maxSize;
   renderHistory();
 });
+
+const unpairAllBtn = document.getElementById("btn-unpair-all");
+if (unpairAllBtn) {
+  unpairAllBtn.addEventListener("click", async () => {
+    const devices = await window.clipboardApp.listDevices();
+    for (const d of devices) {
+      await unpairDevice(d.device_id);
+    }
+  });
+}
 
 async function unpairDevice(deviceId) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;

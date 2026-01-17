@@ -161,6 +161,7 @@ function getOrCreateDeviceIdentity() {
   if (!getSetting("sync_enabled")) setSetting("sync_enabled", "true");
   if (!getSetting("sync_text")) setSetting("sync_text", "true");
   if (!getSetting("history_limit")) setSetting("history_limit", "50");
+  if (!getSetting("max_item_size_kb")) setSetting("max_item_size_kb", "1024");
 
   return { deviceId, deviceName, publicKey, privateKey };
 }
@@ -309,7 +310,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("get-settings", () => ({
     syncEnabled,
     syncTextEnabled,
-    historyLimit
+    historyLimit,
+    maxItemSizeKb: Number(dbGet("SELECT value FROM settings WHERE key = ?", ["max_item_size_kb"])?.value || "1024")
   }));
   ipcMain.handle("set-setting", (_, key, value) => {
     dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);

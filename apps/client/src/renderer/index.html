@@ -7,45 +7,103 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
-      <h1>Universal Clipboard Sync</h1>
-      <div id="status">Disconnected</div>
-    </header>
+    <div class="app">
+      <aside class="nav">
+        <div class="brand">
+          <div class="brand-title">Universal Clipboard Sync</div>
+          <div class="brand-sub">Secure P2P Clipboard</div>
+        </div>
+        <button class="nav-item active" data-page="dashboard">Dashboard</button>
+        <button class="nav-item" data-page="devices">Devices</button>
+        <button class="nav-item" data-page="settings">Settings</button>
+        <button class="nav-item" data-page="about">About</button>
+        <div class="nav-footer">
+          <div id="status" class="status">Connecting…</div>
+          <div id="clock" class="clock"></div>
+        </div>
+      </aside>
 
-    <section class="panel">
-      <h2>Pair Device</h2>
-      <div class="row">
-        <button id="btn-generate-qr">Generate Pair Code</button>
-        <input id="pair-token" placeholder="Paste pair code" />
-        <button id="btn-pair">Pair</button>
-      </div>
-      <div id="token-display" class="token"></div>
-      <div id="pair-status" class="hint"></div>
-    </section>
+      <main class="content">
+        <section id="page-dashboard" class="page active">
+          <div class="page-header">
+            <h1>Dashboard</h1>
+            <div class="summary">
+              <span id="online-count">Online: 0</span>
+              <span id="offline-count">Offline: 0</span>
+            </div>
+          </div>
+          <div class="dashboard-grid">
+            <div class="panel">
+              <h2>Paired Devices</h2>
+              <ul id="devices" class="list"></ul>
+            </div>
+            <div class="panel history-panel">
+              <h2>Clipboard History</h2>
+              <ul id="history" class="list"></ul>
+            </div>
+          </div>
+        </section>
 
-    <section class="panel">
-      <h2>Devices</h2>
-      <ul id="devices"></ul>
-    </section>
+        <section id="page-devices" class="page">
+          <div class="page-header">
+            <h1>Device Pairing</h1>
+          </div>
+          <div class="panel">
+            <h2>Add Device</h2>
+            <div class="row">
+              <button id="btn-generate-code">Generate Pair Code</button>
+              <div id="token-display" class="token"></div>
+            </div>
+            <div class="row">
+              <input id="pair-token" placeholder="Paste pair code" />
+              <button id="btn-pair">Pair</button>
+            </div>
+            <div id="pair-status" class="hint"></div>
+          </div>
+          <div class="panel">
+            <h2>Remove Devices</h2>
+            <ul id="devices-manage" class="list"></ul>
+            <div class="row">
+              <button id="btn-unpair-all" class="danger">Remove This Device (Unpair All)</button>
+            </div>
+          </div>
+        </section>
 
-    <section class="panel">
-      <h2>Clipboard History</h2>
-      <ul id="history"></ul>
-    </section>
+        <section id="page-settings" class="page">
+          <div class="page-header">
+            <h1>Settings</h1>
+          </div>
+          <div class="panel">
+            <h2>Preferences</h2>
+            <div class="row">
+              <label class="field">
+                <span>Device name</span>
+                <input id="device-name" placeholder="Device name" />
+              </label>
+              <button id="btn-save-name">Save</button>
+            </div>
+            <div class="row settings-row">
+              <label><input type="checkbox" id="sync-enabled" /> Sync enabled</label>
+              <label><input type="checkbox" id="sync-text" /> Sync text</label>
+              <label>History limit <input type="number" id="history-limit" min="10" max="500" /></label>
+              <label>Max item size (KB) <input type="number" id="max-item-size" min="1" max="10240" /></label>
+            </div>
+            <button id="btn-save-settings">Save Settings</button>
+          </div>
+        </section>
 
-    <section class="panel">
-      <h2>Settings</h2>
-      <div class="row">
-        <input id="device-name" placeholder="Device name" />
-        <button id="btn-save-name">Save</button>
-      </div>
-      <div class="row settings-row">
-        <label><input type="checkbox" id="sync-enabled" /> Sync enabled</label>
-        <label><input type="checkbox" id="sync-text" /> Sync text</label>
-        <label>History limit <input type="number" id="history-limit" min="10" max="500" /></label>
-        <button id="btn-save-settings">Save Settings</button>
-      </div>
-    </section>
+        <section id="page-about" class="page">
+          <div class="page-header">
+            <h1>About</h1>
+          </div>
+          <div class="panel">
+            <h2>Universal Clipboard Sync</h2>
+            <p>Peer‑to‑peer clipboard sync across the internet using WebRTC data channels and WebSocket signaling.</p>
+            <p>Use the Devices page to generate a 6‑digit code, then enter it on the other device to pair.</p>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <script src="renderer.js"></script>
   </body>
