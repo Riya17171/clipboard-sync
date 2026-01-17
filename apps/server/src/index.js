@@ -113,6 +113,12 @@ wss.on("connection", (ws) => {
           send(ws, { type: "pair_failed", error: "cannot_pair_self" });
           return;
         }
+        if (pairs.get(deviceA)?.has(deviceB)) {
+          send(ws, { type: "pair_failed", error: "already_paired" });
+          const a = devices.get(deviceA);
+          if (a) send(a.ws, { type: "pair_failed", error: "already_paired" });
+          return;
+        }
         pairingTokens.delete(token);
 
         addPair(deviceA, deviceB);

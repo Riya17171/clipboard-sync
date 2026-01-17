@@ -157,8 +157,16 @@ function connectSignaling() {
         await ensurePeerConnection(msg.peer.deviceId);
         break;
       case "pair_failed":
-        statusEl.textContent = `Pair failed: ${msg.error || "unknown"}`;
-        setPairStatus("Pair failed.");
+        if (msg.error === "already_paired") {
+          statusEl.textContent = "Already paired";
+          setPairStatus("Already paired with this device.");
+        } else if (msg.error === "cannot_pair_self") {
+          statusEl.textContent = "Cannot pair to self";
+          setPairStatus("This device cannot pair with itself.");
+        } else {
+          statusEl.textContent = "Pair failed";
+          setPairStatus("Pair failed.");
+        }
         break;
       case "presence":
         window.clipboardApp.notifyPresence(msg);
