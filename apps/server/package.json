@@ -1,0 +1,13 @@
+{
+  "name": "clipboard-signaling-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.0",
+    "uuid": "^10.0.0"
+  }
+}

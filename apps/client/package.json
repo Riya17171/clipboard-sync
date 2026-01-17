@@ -1,0 +1,15 @@
+{
+  "name": "clipboard-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^31.3.1",
+    "sql.js": "^1.10.3",
+    "uuid": "^10.0.0"
+  }
+}
