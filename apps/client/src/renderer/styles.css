@@ -182,6 +182,10 @@ input {
   gap: 10px;
 }
 
+.history-panel .list li {
+  display: block;
+}
+
 .token {
   color: var(--accent);
   font-weight: 700;

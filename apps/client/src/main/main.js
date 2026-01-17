@@ -207,6 +207,23 @@ function storeClipboardItem(item) {
   );
 }
 
+function encodeImageForClipboard(image, maxBytes) {
+  const png = image.toPNG();
+  if (png.length <= maxBytes) {
+    return { payload: `data:image/png;base64,${png.toString("base64")}`, sizeBytes: png.length };
+  }
+
+  const resized = image.resize({ width: 800 });
+  const jpg = resized.toJPEG(70);
+  if (jpg.length <= maxBytes) {
+    return { payload: `data:image/jpeg;base64,${jpg.toString("base64")}`, sizeBytes: jpg.length };
+  }
+
+  const smaller = image.resize({ width: 500 });
+  const jpgSmall = smaller.toJPEG(60);
+  return { payload: `data:image/jpeg;base64,${jpgSmall.toString("base64")}`, sizeBytes: jpgSmall.length };
+}
+
 function enqueueForAllPeers(itemId) {
   const peers = dbAll("SELECT device_id FROM devices");
   for (const peer of peers) {
@@ -295,9 +312,9 @@ function startClipboardWatcher(deviceId) {
     const image = clipboard.readImage();
     if (image && !image.isEmpty()) {
       type = "image";
-      const png = image.toPNG();
-      sizeBytes = png.length;
-      payload = `data:image/png;base64,${png.toString("base64")}`;
+      const encoded = encodeImageForClipboard(image, maxItemSizeKb * 1024);
+      payload = encoded.payload;
+      sizeBytes = encoded.sizeBytes;
     } else if (hasFormat("image/png") || hasFormat("image/jpeg") || hasFormat("image/jpg")) {
       const fmt = hasFormat("image/png") ? "image/png" : "image/jpeg";
       const buf = clipboard.readBuffer(fmt);
@@ -305,6 +322,21 @@ function startClipboardWatcher(deviceId) {
         type = "image";
         sizeBytes = buf.length;
         payload = `data:${fmt};base64,${buf.toString("base64")}`;
+      }
+    }
+
+    if (type !== "image") {
+      // Try HTML image fallback (e.g., copied from browser)
+      try {
+        const html = clipboard.readHTML();
+        const match = html.match(/<img[^>]+src=['"]([^'"]+)['"]/i);
+        if (match && match[1] && match[1].startsWith("data:image/")) {
+          type = "image";
+          payload = match[1];
+          sizeBytes = Buffer.byteLength(payload, "utf8");
+        }
+      } catch {
+        // ignore
       }
     }
 
@@ -320,8 +352,10 @@ function startClipboardWatcher(deviceId) {
 
       if (filePath) {
         const first = filePath.split(/\r?\n/).find((line) => line.trim().length > 0) || "";
-        const decoded = first.replace(/^file:\/\//i, "");
-        payload = decodeURIComponent(decoded);
+        let decoded = first.replace(/^file:\/\//i, "");
+        decoded = decodeURIComponent(decoded);
+        if (/^\/[A-Za-z]:\//.test(decoded)) decoded = decoded.slice(1);
+        payload = decoded;
         type = "file";
         sizeBytes = Buffer.byteLength(payload, "utf8");
       } else {
