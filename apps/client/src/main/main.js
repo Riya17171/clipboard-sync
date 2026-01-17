@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 
 const USER_DATA_DIR = app.getPath("userData");
 const DB_PATH = path.join(USER_DATA_DIR, "clipboard.db");
+const MAIN_LOG = path.join(USER_DATA_DIR, "main.log");
 
 let mainWindow = null;
 let lastAppliedId = null;
@@ -20,6 +21,22 @@ let historyLimit = 50;
 let db = null;
 let saveTimer = null;
 const RENDERER_LOG = path.join(USER_DATA_DIR, "renderer.log");
+
+function logMain(message) {
+  try {
+    fs.appendFileSync(MAIN_LOG, `${new Date().toISOString()} ${message}\n`);
+  } catch {
+    // ignore
+  }
+}
+
+process.on("uncaughtException", (err) => {
+  logMain(`uncaughtException: ${err?.stack || err}`);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logMain(`unhandledRejection: ${reason}`);
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
