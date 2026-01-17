@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, clipboard } from "electron";
+import { app, BrowserWindow, ipcMain, clipboard, nativeImage } from "electron";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -14,10 +14,11 @@ const MAIN_LOG = path.join(USER_DATA_DIR, "main.log");
 
 let mainWindow = null;
 let lastAppliedId = null;
-let lastClipboardText = "";
+let lastClipboardSignature = "";
 let syncEnabled = true;
 let syncTextEnabled = true;
 let historyLimit = 50;
+let maxItemSizeKb = 10240;
 let db = null;
 let saveTimer = null;
 const RENDERER_LOG = path.join(USER_DATA_DIR, "renderer.log");
@@ -178,7 +179,7 @@ function getOrCreateDeviceIdentity() {
   if (!getSetting("sync_enabled")) setSetting("sync_enabled", "true");
   if (!getSetting("sync_text")) setSetting("sync_text", "true");
   if (!getSetting("history_limit")) setSetting("history_limit", "50");
-  if (!getSetting("max_item_size_kb")) setSetting("max_item_size_kb", "1024");
+  if (!getSetting("max_item_size_kb")) setSetting("max_item_size_kb", "10240");
 
   return { deviceId, deviceName, publicKey, privateKey };
 }
@@ -188,6 +189,7 @@ function loadSettings() {
   syncEnabled = getSetting("sync_enabled") !== "false";
   syncTextEnabled = getSetting("sync_text") !== "false";
   historyLimit = Number(getSetting("history_limit") || "50");
+  maxItemSizeKb = Number(getSetting("max_item_size_kb") || "10240");
 }
 
 function storeClipboardItem(item) {
@@ -282,21 +284,43 @@ function removeDevice(deviceId) {
 
 function startClipboardWatcher(deviceId) {
   setInterval(() => {
-    if (!syncEnabled || !syncTextEnabled) return;
-    const text = clipboard.readText();
-    if (!text) return;
-    if (text === lastClipboardText) return;
+    if (!syncEnabled) return;
+    let type = "text";
+    let payload = "";
+    let sizeBytes = 0;
 
-    lastClipboardText = text;
+    const image = clipboard.readImage();
+    if (image && !image.isEmpty()) {
+      type = "image";
+      const png = image.toPNG();
+      sizeBytes = png.length;
+      payload = `data:image/png;base64,${png.toString("base64")}`;
+    } else {
+      const text = clipboard.readText();
+      if (!text) return;
+      if (!syncTextEnabled) return;
+      payload = text;
+      sizeBytes = Buffer.byteLength(payload, "utf8");
+      if (fs.existsSync(text) && fs.statSync(text).isFile()) {
+        type = "file";
+      }
+    }
+
+    const signature = `${type}:${payload}`;
+    if (signature === lastClipboardSignature) return;
+    lastClipboardSignature = signature;
+    if (sizeBytes > maxItemSizeKb * 1024) {
+      return;
+    }
     const itemId = randomUUID();
     const item = {
       item_id: itemId,
       device_id: deviceId,
       ts: Date.now(),
       hlc: null,
-      type: "text",
-      payload: text,
-      size_bytes: Buffer.byteLength(text, "utf8")
+      type,
+      payload,
+      size_bytes: sizeBytes
     };
 
     storeClipboardItem(item);
@@ -328,7 +352,7 @@ app.whenReady().then(async () => {
     syncEnabled,
     syncTextEnabled,
     historyLimit,
-    maxItemSizeKb: Number(dbGet("SELECT value FROM settings WHERE key = ?", ["max_item_size_kb"])?.value || "1024")
+    maxItemSizeKb: Number(dbGet("SELECT value FROM settings WHERE key = ?", ["max_item_size_kb"])?.value || "10240")
   }));
   ipcMain.handle("set-setting", (_, key, value) => {
     dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);
@@ -343,10 +367,16 @@ app.whenReady().then(async () => {
   ipcMain.on("apply-remote-clipboard", (_, item) => {
     if (!syncEnabled) return;
     if (item.type === "text" && !syncTextEnabled) return;
+    if (item.size_bytes && item.size_bytes > maxItemSizeKb * 1024) return;
     lastAppliedId = item.item_id;
-    const text = item.payload || "";
-    lastClipboardText = text;
-    clipboard.writeText(text);
+    const payload = item.payload || "";
+    lastClipboardSignature = `${item.type}:${payload}`;
+    if (item.type === "image") {
+      const image = nativeImage.createFromDataURL(payload);
+      clipboard.writeImage(image);
+    } else {
+      clipboard.writeText(payload);
+    }
     storeClipboardItem(item);
   });
 

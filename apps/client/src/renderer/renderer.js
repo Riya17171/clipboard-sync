@@ -455,7 +455,35 @@ async function renderHistory() {
   historyEl.innerHTML = "";
   for (const h of history) {
     const li = document.createElement("li");
-    li.textContent = `${new Date(h.ts).toLocaleTimeString()} - ${h.payload}`;
+    const time = new Date(h.ts).toLocaleTimeString();
+    if (h.type === "image") {
+      const wrap = document.createElement("div");
+      wrap.className = "history-item";
+      const img = document.createElement("img");
+      img.src = h.payload;
+      img.alt = "clipboard image";
+      img.className = "history-image";
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.textContent = `${time} · image`;
+      wrap.appendChild(img);
+      wrap.appendChild(meta);
+      li.appendChild(wrap);
+    } else if (h.type === "file") {
+      const wrap = document.createElement("div");
+      wrap.className = "history-item";
+      const name = h.payload.split(/[/\\\\]/).pop();
+      const title = document.createElement("div");
+      title.textContent = `${name}`;
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.textContent = `${time} · file · ${h.payload}`;
+      wrap.appendChild(title);
+      wrap.appendChild(meta);
+      li.appendChild(wrap);
+    } else {
+      li.textContent = `${time} · ${h.payload}`;
+    }
     historyEl.appendChild(li);
   }
 }
