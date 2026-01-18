@@ -204,6 +204,12 @@ function loadSettings() {
 }
 
 function storeClipboardItem(item, localDeviceId, localDeviceName) {
+  if (!item.device_id) item.device_id = "peer";
+  if (!item.type) item.type = "text";
+  if (item.payload === undefined || item.payload === null) item.payload = "";
+  if (!item.size_bytes) {
+    item.size_bytes = Buffer.byteLength(String(item.payload), "utf8");
+  }
   const deviceName =
     item.device_name ||
     (item.device_id === localDeviceId ? localDeviceName : undefined) ||

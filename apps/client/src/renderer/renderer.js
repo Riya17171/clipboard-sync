@@ -37,6 +37,13 @@ function fromBase64(b64) {
   return decodeURIComponent(escape(atob(b64)));
 }
 
+function payloadSize(payload) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.byteLength(payload, "utf8");
+  }
+  return payload.length;
+}
+
 if (!window.clipboardApp && typeof require === "function") {
   const { ipcRenderer } = require("electron");
   const crypto = require("crypto");
@@ -361,20 +368,30 @@ async function ensurePeerConnection(peerId) {
   }
   const isInitiator = identity.deviceId < peerId;
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const peerRecord = { pc, dc: null, pendingIce: [] };
+  peers.set(peerId, peerRecord);
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      ws.send(JSON.stringify({
+      safeSend({
         type: "signal",
         to: peerId,
         payload: { type: "ice", candidate: event.candidate }
-      }));
+      });
     }
   };
 
   pc.ondatachannel = (event) => {
     const dc = event.channel;
     setupDataChannel(peerId, dc);
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (["failed", "disconnected"].includes(pc.iceConnectionState)) {
+      try { pc.close(); } catch {}
+      peers.delete(peerId);
+      setTimeout(() => ensurePeerConnection(peerId), 1000);
+    }
   };
 
   pc.onconnectionstatechange = () => {
@@ -390,10 +407,9 @@ async function ensurePeerConnection(peerId) {
     setupDataChannel(peerId, dc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({ type: "signal", to: peerId, payload: { type: "offer", sdp: offer } }));
+    safeSend({ type: "signal", to: peerId, payload: { type: "offer", sdp: offer } });
   }
-
-  peers.set(peerId, { pc, dc });
+  peerRecord.dc = dc;
 }
 
 function sendPairKey(peerId, token) {
@@ -411,6 +427,22 @@ function setupDataChannel(peerId, dc) {
     try {
       dc.send(JSON.stringify({ kind: "sync_request" }));
     } catch {}
+  };
+  dc.onclose = () => {
+    const peer = peers.get(peerId);
+    if (peer?.pc) {
+      try { peer.pc.close(); } catch {}
+    }
+    peers.delete(peerId);
+    setTimeout(() => ensurePeerConnection(peerId), 1000);
+  };
+  dc.onerror = () => {
+    const peer = peers.get(peerId);
+    if (peer?.pc) {
+      try { peer.pc.close(); } catch {}
+    }
+    peers.delete(peerId);
+    setTimeout(() => ensurePeerConnection(peerId), 1000);
   };
   dc.onmessage = (event) => {
     try {
@@ -439,7 +471,8 @@ async function handleSignal(peerId, payload) {
   if (!peers.has(peerId)) {
     await ensurePeerConnection(peerId);
   }
-  const { pc } = peers.get(peerId);
+  const peer = peers.get(peerId);
+  const { pc } = peer;
 
   if (payload.type === "pair_key") {
     if (!currentPairToken) return;
@@ -458,18 +491,47 @@ async function handleSignal(peerId, payload) {
   }
   if (payload.type === "offer") {
     if (pc.signalingState !== "stable") {
-      return;
+      try {
+        await pc.setLocalDescription({ type: "rollback" });
+      } catch {
+        return;
+      }
     }
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    if (peer?.pendingIce?.length) {
+      const queued = peer.pendingIce.slice();
+      peer.pendingIce.length = 0;
+      for (const candidate of queued) {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch {
+          // ignore
+        }
+      }
+    }
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    ws.send(JSON.stringify({ type: "signal", to: peerId, payload: { type: "answer", sdp: answer } }));
+    safeSend({ type: "signal", to: peerId, payload: { type: "answer", sdp: answer } });
   } else if (payload.type === "answer") {
     if (pc.signalingState !== "have-local-offer") return;
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    if (peer?.pendingIce?.length) {
+      const queued = peer.pendingIce.slice();
+      peer.pendingIce.length = 0;
+      for (const candidate of queued) {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch {
+          // ignore
+        }
+      }
+    }
   } else if (payload.type === "ice") {
     try {
-      if (!pc.remoteDescription) return;
+      if (!pc.remoteDescription) {
+        peer?.pendingIce?.push(payload.candidate);
+        return;
+      }
       await pc.addIceCandidate(payload.candidate);
     } catch {
       // ignore
@@ -499,6 +561,9 @@ function sendClipboardItem(dc, item) {
     item.device_name = identity?.deviceName || "This device";
   }
   const payload = item.payload || "";
+  if (!item.size_bytes) {
+    item.size_bytes = payloadSize(payload);
+  }
   const payloadB64 = toBase64(payload);
   const maxChunk = 12 * 1024; // 12KB
   if (payloadB64.length <= maxChunk) {
