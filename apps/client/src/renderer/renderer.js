@@ -1,5 +1,22 @@
 const SIGNALING_URL = "wss://untransmissive-carmelia-tomial.ngrok-free.dev";
-const STUN_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" }
+];
+
+if (typeof process !== "undefined" && process.env) {
+  const turnUrl = process.env.TURN_URL;
+  const turnUser = process.env.TURN_USER;
+  const turnPass = process.env.TURN_PASS;
+  if (turnUrl && turnUser && turnPass) {
+    ICE_SERVERS.push({
+      urls: turnUrl,
+      username: turnUser,
+      credential: turnPass
+    });
+  }
+}
 
 let ws = null;
 let identity = null;
@@ -295,7 +312,7 @@ function startHeartbeat() {
 async function ensurePeerConnection(peerId) {
   if (peers.has(peerId)) return;
   const isInitiator = identity.deviceId < peerId;
-  const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
