@@ -23,6 +23,20 @@ let identity = null;
 const peers = new Map(); // peerId -> { pc, dc }
 const incomingChunks = new Map(); // item_id -> { total, received, chunks, meta }
 
+function toBase64(str) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(str, "utf8").toString("base64");
+  }
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function fromBase64(b64) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(b64, "base64").toString("utf8");
+  }
+  return decodeURIComponent(escape(atob(b64)));
+}
+
 if (!window.clipboardApp && typeof require === "function") {
   const { ipcRenderer } = require("electron");
   const crypto = require("crypto");
@@ -153,6 +167,20 @@ async function init() {
       flushPending(peerId);
     }
   }, 10_000);
+
+  setInterval(() => {
+    for (const [peerId, peer] of peers.entries()) {
+      if (!peer.dc || peer.dc.readyState !== "open") {
+        ensurePeerConnection(peerId);
+        continue;
+      }
+      try {
+        peer.dc.send(JSON.stringify({ kind: "sync_request" }));
+      } catch {
+        // ignore
+      }
+    }
+  }, 15_000);
 
   if (historySearchEl) {
     historySearchEl.addEventListener("input", () => {
@@ -321,8 +349,13 @@ function startHeartbeat() {
 async function ensurePeerConnection(peerId) {
   if (peers.has(peerId)) {
     const existing = peers.get(peerId);
-    if (existing?.pc && ["failed", "disconnected", "closed"].includes(existing.pc.connectionState)) {
+    const dcState = existing?.dc?.readyState;
+    const pcState = existing?.pc?.connectionState;
+    if (existing?.pc && ["failed", "disconnected", "closed"].includes(pcState)) {
       try { existing.pc.close(); } catch {}
+      peers.delete(peerId);
+    } else if (existing?.dc && ["closing", "closed"].includes(dcState)) {
+      try { existing.pc?.close(); } catch {}
       peers.delete(peerId);
     } else {
       return;
@@ -468,28 +501,37 @@ function sendClipboardItem(dc, item) {
     item.device_name = identity?.deviceName || "This device";
   }
   const payload = item.payload || "";
-  const payloadB64 = Buffer.from(payload, "utf8").toString("base64");
+  const payloadB64 = toBase64(payload);
   const maxChunk = 12 * 1024; // 12KB
   if (payloadB64.length <= maxChunk) {
-    dc.send(JSON.stringify({ kind: "clipboard", item }));
+    try {
+      dc.send(JSON.stringify({ kind: "clipboard", item }));
+    } catch {
+      // ignore
+    }
     return;
   }
   const total = Math.ceil(payloadB64.length / maxChunk);
   for (let i = 0; i < total; i++) {
     const chunk = payloadB64.slice(i * maxChunk, (i + 1) * maxChunk);
-    dc.send(JSON.stringify({
-      kind: "chunk",
-      item_id: item.item_id,
-      index: i,
-      total,
-      data: chunk,
-      meta: {
-        device_id: item.device_id,
-        ts: item.ts,
-        type: item.type,
-        size_bytes: item.size_bytes || payload.length
-      }
-    }));
+    try {
+      dc.send(JSON.stringify({
+        kind: "chunk",
+        item_id: item.item_id,
+        index: i,
+        total,
+        data: chunk,
+        meta: {
+          device_id: item.device_id,
+          device_name: item.device_name,
+          ts: item.ts,
+          type: item.type,
+          size_bytes: item.size_bytes || payload.length
+        }
+      }));
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -513,10 +555,11 @@ function handleChunkMessage(peerId, dc, msg) {
   }
   if (entry.received === entry.total) {
     const joined = entry.chunks.join("");
-    const payload = Buffer.from(joined, "base64").toString("utf8");
+    const payload = fromBase64(joined);
     const item = {
       item_id: key,
       device_id: entry.meta.device_id || "peer",
+      device_name: entry.meta.device_name || "Unknown",
       ts: entry.meta.ts || Date.now(),
       hlc: null,
       type: entry.meta.type || "text",
