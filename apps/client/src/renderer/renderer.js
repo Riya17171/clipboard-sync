@@ -88,10 +88,12 @@ const onlineCountEl = document.getElementById("online-count");
 const offlineCountEl = document.getElementById("offline-count");
 const clockEl = document.getElementById("clock");
 const navButtons = document.querySelectorAll(".nav-item");
+const historySearchEl = document.getElementById("history-search");
 
 let currentPairToken = null;
 let pendingPairTokenRequest = false;
 let pairTokenTimeout = null;
+let historyQuery = "";
 
 function setPairStatus(text) {
   if (pairStatusEl) pairStatusEl.textContent = text || "";
@@ -151,6 +153,13 @@ async function init() {
       flushPending(peerId);
     }
   }, 10_000);
+
+  if (historySearchEl) {
+    historySearchEl.addEventListener("input", () => {
+      historyQuery = historySearchEl.value.trim().toLowerCase();
+      renderHistory();
+    });
+  }
 }
 
 function connectSignaling() {
@@ -310,7 +319,15 @@ function startHeartbeat() {
 }
 
 async function ensurePeerConnection(peerId) {
-  if (peers.has(peerId)) return;
+  if (peers.has(peerId)) {
+    const existing = peers.get(peerId);
+    if (existing?.pc && ["failed", "disconnected", "closed"].includes(existing.pc.connectionState)) {
+      try { existing.pc.close(); } catch {}
+      peers.delete(peerId);
+    } else {
+      return;
+    }
+  }
   const isInitiator = identity.deviceId < peerId;
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
@@ -327,6 +344,13 @@ async function ensurePeerConnection(peerId) {
   pc.ondatachannel = (event) => {
     const dc = event.channel;
     setupDataChannel(peerId, dc);
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+      try { pc.close(); } catch {}
+      peers.delete(peerId);
+    }
   };
 
   let dc = null;
@@ -353,6 +377,9 @@ function sendPairKey(peerId, token) {
 function setupDataChannel(peerId, dc) {
   dc.onopen = () => {
     flushPending(peerId);
+    try {
+      dc.send(JSON.stringify({ kind: "sync_request" }));
+    } catch {}
   };
   dc.onmessage = (event) => {
     try {
@@ -361,6 +388,8 @@ function setupDataChannel(peerId, dc) {
         window.clipboardApp.applyRemoteClipboard(msg.item);
         renderHistory();
         dc.send(JSON.stringify({ kind: "ack", item_id: msg.item.item_id }));
+      } else if (msg.kind === "sync_request") {
+        flushPending(peerId);
       } else if (msg.kind === "chunk") {
         handleChunkMessage(peerId, dc, msg);
       } else if (msg.kind === "ack") {
@@ -537,9 +566,23 @@ async function renderDevices() {
 async function renderHistory() {
   const history = await window.clipboardApp.listHistory();
   historyEl.innerHTML = "";
-  for (const h of history) {
+  const filtered = history.filter((h) => {
+    if (!historyQuery) return true;
+    const timeStr = new Date(h.ts).toLocaleString().toLowerCase();
+    const deviceName = (h.device_name || "").toLowerCase();
+    const payload = (h.payload || "").toLowerCase();
+    const type = (h.type || "").toLowerCase();
+    return (
+      timeStr.includes(historyQuery) ||
+      deviceName.includes(historyQuery) ||
+      payload.includes(historyQuery) ||
+      type.includes(historyQuery)
+    );
+  });
+  for (const h of filtered) {
     const li = document.createElement("li");
     const time = new Date(h.ts).toLocaleTimeString();
+    const deviceName = h.device_name || "Unknown";
     if (h.type === "image") {
       const wrap = document.createElement("div");
       wrap.className = "history-item";
@@ -549,7 +592,7 @@ async function renderHistory() {
       img.className = "history-image";
       const meta = document.createElement("div");
       meta.className = "history-meta";
-      meta.textContent = `${time} · image`;
+      meta.textContent = `${time} · ${deviceName} · image`;
       wrap.appendChild(img);
       wrap.appendChild(meta);
       li.appendChild(wrap);
@@ -561,12 +604,12 @@ async function renderHistory() {
       title.textContent = `${name}`;
       const meta = document.createElement("div");
       meta.className = "history-meta";
-      meta.textContent = `${time} · file · ${h.payload}`;
+      meta.textContent = `${time} · ${deviceName} · file · ${h.payload}`;
       wrap.appendChild(title);
       wrap.appendChild(meta);
       li.appendChild(wrap);
     } else {
-      li.textContent = `${time} · ${h.payload}`;
+      li.textContent = `${time} · ${deviceName} · ${h.payload}`;
     }
     historyEl.appendChild(li);
   }

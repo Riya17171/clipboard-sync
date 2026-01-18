@@ -162,6 +162,11 @@ input {
   padding: 8px 10px;
 }
 
+#history-search {
+  width: 100%;
+  margin: 8px 0 10px 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;

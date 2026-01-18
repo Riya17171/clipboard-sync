@@ -254,14 +254,23 @@ function markPendingAcked(peerId, itemId) {
   );
 }
 
-function listHistory(limit = 50) {
-  return dbAll(
+function listHistory(limit = 50, localDeviceId, localDeviceName) {
+  const rows = dbAll(
     `SELECT item_id, device_id, ts, type, payload
      FROM clipboard_items
      ORDER BY ts DESC
      LIMIT ?`,
     [limit]
   );
+  return rows.map((row) => {
+    let name = "Unknown";
+    if (row.device_id === localDeviceId) {
+      name = localDeviceName || "This device";
+    } else {
+      name = dbGet("SELECT name FROM devices WHERE device_id = ?", [row.device_id])?.name || "Unknown";
+    }
+    return { ...row, device_name: name };
+  });
 }
 
 function setDeviceStatus(deviceId, status, lastSeen) {
@@ -404,7 +413,7 @@ app.whenReady().then(async () => {
   startClipboardWatcher(identity.deviceId);
 
   ipcMain.handle("get-identity", () => identity);
-  ipcMain.handle("list-history", () => listHistory(historyLimit));
+  ipcMain.handle("list-history", () => listHistory(historyLimit, identity.deviceId, identity.deviceName));
   ipcMain.handle("list-devices", () => listDevices());
   ipcMain.handle("get-pending-items", (_, peerId) => listPendingForPeer(peerId));
   ipcMain.handle("mark-acked", (_, peerId, itemId) => markPendingAcked(peerId, itemId));
