@@ -97,7 +97,6 @@ const syncEnabledEl = document.getElementById("sync-enabled");
 const syncTextEl = document.getElementById("sync-text");
 const historyLimitEl = document.getElementById("history-limit");
 const pairStatusEl = document.getElementById("pair-status");
-const maxItemSizeEl = document.getElementById("max-item-size");
 const onlineCountEl = document.getElementById("online-count");
 const offlineCountEl = document.getElementById("offline-count");
 const clockEl = document.getElementById("clock");
@@ -136,7 +135,6 @@ async function init() {
   syncEnabledEl.checked = settings.syncEnabled;
   syncTextEl.checked = settings.syncTextEnabled;
   historyLimitEl.value = settings.historyLimit;
-  maxItemSizeEl.value = settings.maxItemSizeKb || 1024;
   statusEl.textContent = "Connecting…";
   window.clipboardApp.log("using signaling url");
   connectSignaling();
@@ -691,13 +689,10 @@ document.getElementById("btn-save-name").addEventListener("click", async () => {
 
 document.getElementById("btn-save-settings").addEventListener("click", async () => {
   const limit = Math.max(10, Math.min(500, Number(historyLimitEl.value || 50)));
-  const maxSize = Math.max(1, Math.min(10240, Number(maxItemSizeEl.value || 1024)));
   await window.clipboardApp.setSetting("sync_enabled", syncEnabledEl.checked);
   await window.clipboardApp.setSetting("sync_text", syncTextEl.checked);
   await window.clipboardApp.setSetting("history_limit", limit);
-  await window.clipboardApp.setSetting("max_item_size_kb", maxSize);
   historyLimitEl.value = limit;
-  maxItemSizeEl.value = maxSize;
   renderHistory();
 });
 

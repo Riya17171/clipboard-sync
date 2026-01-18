@@ -199,7 +199,8 @@ function loadSettings() {
   syncEnabled = getSetting("sync_enabled") !== "false";
   syncTextEnabled = getSetting("sync_text") !== "false";
   historyLimit = Number(getSetting("history_limit") || "50");
-  maxItemSizeKb = Number(getSetting("max_item_size_kb") || "10240");
+  maxItemSizeKb = 10240;
+  dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["max_item_size_kb", "10240"]);
 }
 
 function storeClipboardItem(item, localDeviceId, localDeviceName) {
@@ -444,7 +445,7 @@ app.whenReady().then(async () => {
     syncEnabled,
     syncTextEnabled,
     historyLimit,
-    maxItemSizeKb: Number(dbGet("SELECT value FROM settings WHERE key = ?", ["max_item_size_kb"])?.value || "10240")
+    maxItemSizeKb: 10240
   }));
   ipcMain.handle("set-setting", (_, key, value) => {
     dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);
