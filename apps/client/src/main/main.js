@@ -326,7 +326,7 @@ function removeDevice(deviceId) {
   dbRun("DELETE FROM devices WHERE device_id = ?", [deviceId]);
 }
 
-function startClipboardWatcher(deviceId) {
+function startClipboardWatcher(deviceId, deviceName) {
   setInterval(() => {
     if (!syncEnabled) return;
     let type = "text";
@@ -414,7 +414,7 @@ function startClipboardWatcher(deviceId) {
       size_bytes: sizeBytes
     };
 
-    storeClipboardItem(item, deviceId, identity.deviceName);
+    storeClipboardItem(item, deviceId, deviceName);
     enqueueForAllPeers(item.item_id);
     if (mainWindow) {
       mainWindow.webContents.send("clipboard-local-change", item);
@@ -428,7 +428,7 @@ app.whenReady().then(async () => {
   loadSettings();
 
   createWindow();
-  startClipboardWatcher(identity.deviceId);
+  startClipboardWatcher(identity.deviceId, identity.deviceName);
 
   ipcMain.handle("get-identity", () => identity);
   ipcMain.handle("list-history", () => listHistory(historyLimit, identity.deviceId, identity.deviceName));
