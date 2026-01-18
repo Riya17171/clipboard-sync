@@ -464,6 +464,9 @@ async function flushPending(peerId) {
 }
 
 function sendClipboardItem(dc, item) {
+  if (!item.device_name) {
+    item.device_name = identity?.deviceName || "This device";
+  }
   const payload = item.payload || "";
   const payloadB64 = Buffer.from(payload, "utf8").toString("base64");
   const maxChunk = 12 * 1024; // 12KB

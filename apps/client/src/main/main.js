@@ -101,6 +101,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS clipboard_items (
       item_id TEXT PRIMARY KEY,
       device_id TEXT NOT NULL,
+      device_name TEXT,
       ts INTEGER NOT NULL,
       hlc TEXT,
       type TEXT NOT NULL,
@@ -118,6 +119,15 @@ async function initDb() {
       FOREIGN KEY (item_id) REFERENCES clipboard_items(item_id)
     );
   `);
+
+  // Add device_name column if upgrading from older DB
+  const cols = database.exec("PRAGMA table_info(clipboard_items)");
+  if (cols && cols[0] && cols[0].values) {
+    const hasDeviceName = cols[0].values.some((row) => row[1] === "device_name");
+    if (!hasDeviceName) {
+      database.exec("ALTER TABLE clipboard_items ADD COLUMN device_name TEXT;");
+    }
+  }
 
   return database;
 }
@@ -192,11 +202,17 @@ function loadSettings() {
   maxItemSizeKb = Number(getSetting("max_item_size_kb") || "10240");
 }
 
-function storeClipboardItem(item) {
+function storeClipboardItem(item, localDeviceId, localDeviceName) {
+  const deviceName =
+    item.device_name ||
+    (item.device_id === localDeviceId ? localDeviceName : undefined) ||
+    dbGet("SELECT name FROM devices WHERE device_id = ?", [item.device_id])?.name ||
+    "Unknown";
+
   dbRun(
-    `INSERT OR REPLACE INTO clipboard_items (item_id, device_id, ts, hlc, type, payload, size_bytes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  , [item.item_id, item.device_id, item.ts, item.hlc, item.type, item.payload, item.size_bytes]);
+    `INSERT OR REPLACE INTO clipboard_items (item_id, device_id, device_name, ts, hlc, type, payload, size_bytes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  , [item.item_id, item.device_id, deviceName, item.ts, item.hlc, item.type, item.payload, item.size_bytes]);
 
   dbRun(
     `DELETE FROM clipboard_items
@@ -236,7 +252,7 @@ function enqueueForAllPeers(itemId) {
 
 function listPendingForPeer(peerId, limit = 50) {
   return dbAll(
-    `SELECT pq.item_id, ci.device_id, ci.ts, ci.type, ci.payload, ci.size_bytes
+    `SELECT pq.item_id, ci.device_id, ci.device_name, ci.ts, ci.type, ci.payload, ci.size_bytes
      FROM pending_queue pq
      JOIN clipboard_items ci ON ci.item_id = pq.item_id
      WHERE pq.target_device_id = ? AND pq.status = 'pending'
@@ -256,18 +272,20 @@ function markPendingAcked(peerId, itemId) {
 
 function listHistory(limit = 50, localDeviceId, localDeviceName) {
   const rows = dbAll(
-    `SELECT item_id, device_id, ts, type, payload
+    `SELECT item_id, device_id, device_name, ts, type, payload
      FROM clipboard_items
      ORDER BY ts DESC
      LIMIT ?`,
     [limit]
   );
   return rows.map((row) => {
-    let name = "Unknown";
-    if (row.device_id === localDeviceId) {
-      name = localDeviceName || "This device";
-    } else {
-      name = dbGet("SELECT name FROM devices WHERE device_id = ?", [row.device_id])?.name || "Unknown";
+    let name = row.device_name;
+    if (!name) {
+      if (row.device_id === localDeviceId) {
+        name = localDeviceName || "This device";
+      } else {
+        name = dbGet("SELECT name FROM devices WHERE device_id = ?", [row.device_id])?.name || "Unknown";
+      }
     }
     return { ...row, device_name: name };
   });
@@ -396,7 +414,7 @@ function startClipboardWatcher(deviceId) {
       size_bytes: sizeBytes
     };
 
-    storeClipboardItem(item);
+    storeClipboardItem(item, deviceId, identity.deviceName);
     enqueueForAllPeers(item.item_id);
     if (mainWindow) {
       mainWindow.webContents.send("clipboard-local-change", item);
@@ -419,6 +437,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("mark-acked", (_, peerId, itemId) => markPendingAcked(peerId, itemId));
   ipcMain.handle("set-device-name", (_, name) => {
     dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["device_name", name]);
+    identity.deviceName = name;
     return true;
   });
   ipcMain.handle("get-settings", () => ({
@@ -452,7 +471,7 @@ app.whenReady().then(async () => {
     } else {
       clipboard.writeText(payload);
     }
-    storeClipboardItem(item);
+    storeClipboardItem(item, identity.deviceId, identity.deviceName);
   });
 
   ipcMain.on("pair-success", (_, peer) => {
