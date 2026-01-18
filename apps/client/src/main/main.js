@@ -370,17 +370,26 @@ function startClipboardWatcher(deviceId, deviceName) {
 
     if (type !== "image") {
       let filePath = "";
-      if (hasFormat("public.file-url")) {
-        const buf = clipboard.readBuffer("public.file-url");
+      if (hasFormat("x-special/gnome-copied-files")) {
+        const buf = clipboard.readBuffer("x-special/gnome-copied-files");
+        filePath = buf.toString("utf8");
+      } else if (hasFormat("application/x-gnome-copied-files")) {
+        const buf = clipboard.readBuffer("application/x-gnome-copied-files");
         filePath = buf.toString("utf8");
       } else if (hasFormat("text/uri-list")) {
         const buf = clipboard.readBuffer("text/uri-list");
         filePath = buf.toString("utf8");
+      } else if (hasFormat("public.file-url")) {
+        const buf = clipboard.readBuffer("public.file-url");
+        filePath = buf.toString("utf8");
       }
 
       if (filePath) {
-        const first = filePath.split(/\r?\n/).find((line) => line.trim().length > 0) || "";
-        let decoded = first.replace(/^file:\/\//i, "");
+        const lines = filePath.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const first = lines.find((line) => line.startsWith("file://")) || lines.find(Boolean) || "";
+        const cleaned = first.replace(/^(copy|cut)$/i, "").trim();
+        const url = cleaned.startsWith("file://") ? cleaned : first;
+        let decoded = url.replace(/^file:\/\//i, "");
         decoded = decodeURIComponent(decoded);
         if (/^\/[A-Za-z]:\//.test(decoded)) decoded = decoded.slice(1);
         payload = decoded;
